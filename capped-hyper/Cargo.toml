@@ -1,0 +1,9 @@
+[package]
+name = "capped-hyper"
+version = "0.1.0"
+authors = ["Stuart Hinson <stuart.hinson@gmail.com>"]
+
+[dependencies]
+futures = "0.1"
+hyper = "0.12"
+tokio-core = "0.1"
