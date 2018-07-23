@@ -13,7 +13,7 @@ use tokio_core::reactor::Core;
 pub fn main() -> Result<(), Error> {
     let mut core = Core::new().unwrap();
     let client = Client::new();
-    let mut capped = ch::Client::new(client, 2);
+    let capped = ch::Client::new(client, 2);
 
     let uris = vec![
         "http://worldclockapi.com/api/json/utc/now",

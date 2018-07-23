@@ -89,7 +89,7 @@ impl<C: Connect + 'static> Client<C> {
         }
     }
 
-    pub fn request(&mut self, req: Request<Body>) -> CappedFuture {
+    pub fn request(&self, req: Request<Body>) -> CappedFuture {
         let inner = self.client.request(req);
 
         CappedFuture {
