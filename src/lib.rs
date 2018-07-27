@@ -2,12 +2,18 @@ extern crate futures;
 extern crate hyper;
 
 use futures::{
-    prelude::*, task::{self, Task},
+    prelude::*,
+    task::{self, Task},
 };
 use hyper::{
-    body::Body, client::{connect::Connect, ResponseFuture}, Request, Response,
+    body::Body,
+    client::{connect::Connect, ResponseFuture},
+    Request, Response,
 };
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 
 pub struct Client<C> {
     client: hyper::Client<C>,
@@ -16,11 +22,11 @@ pub struct Client<C> {
 }
 
 #[derive(Clone)]
-struct State(Rc<RefCell<ClientState>>);
+struct State(Arc<Mutex<ClientState>>);
 
 impl Default for State {
     fn default() -> Self {
-        State(Rc::new(RefCell::new(ClientState {
+        State(Arc::new(Mutex::new(ClientState {
             in_flight: 0,
             queue: VecDeque::new(),
         })))
@@ -57,7 +63,13 @@ impl Future for CappedFuture {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         if self.queued {
-            let mut s = self.state.0.borrow_mut();
+            let mut s = match self.state.0.try_lock() {
+                Ok(s) => s,
+                Err(_) => {
+                    return Ok(Async::NotReady);
+                }
+            };
+
             let current = s.in_flight;
             if current == self.max {
                 s.queue_task(task::current());
@@ -70,10 +82,13 @@ impl Future for CappedFuture {
 
         match self.inner.poll() {
             Ok(Async::Ready(response)) => {
-                let mut s = self.state.0.borrow_mut();
-                s.in_flight -= 1;
-                s.notify_next();
-                Ok(Async::Ready(response))
+                if let Ok(mut s) = self.state.0.try_lock() {
+                    s.in_flight -= 1;
+                    s.notify_next();
+                    Ok(Async::Ready(response))
+                } else {
+                    Ok(Async::NotReady)
+                }
             }
             other @ _ => other,
         }
