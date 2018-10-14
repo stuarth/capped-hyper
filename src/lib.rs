@@ -2,24 +2,31 @@ extern crate futures;
 extern crate hyper;
 
 use futures::{
-    prelude::*, task::{self, Task},
+    prelude::*,
+    task::{self, Task},
 };
-use hyper::{client::ResponseFuture, Response};
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 
 pub struct CappedClient<C> {
     client: Client<C>,
     max: u32,
     state: State,
 }
-pub use hyper::{body::Body, client::connect::Connect, Client, Request};
+pub use hyper::{
+    body::Body,
+    client::{connect::Connect, ResponseFuture},
+    Client, Request, Response,
+};
 
 #[derive(Clone)]
-struct State(Rc<RefCell<ClientState>>);
+struct State(Arc<Mutex<ClientState>>);
 
 impl Default for State {
     fn default() -> Self {
-        State(Rc::new(RefCell::new(ClientState {
+        State(Arc::new(Mutex::new(ClientState {
             in_flight: 0,
             queue: VecDeque::new(),
         })))
@@ -56,7 +63,13 @@ impl Future for CappedFuture {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         if self.queued {
-            let mut s = self.state.0.borrow_mut();
+            let mut s = match self.state.0.try_lock() {
+                Ok(s) => s,
+                Err(_) => {
+                    return Ok(Async::NotReady);
+                }
+            };
+
             let current = s.in_flight;
             if current == self.max {
                 s.queue_task(task::current());
@@ -69,10 +82,13 @@ impl Future for CappedFuture {
 
         match self.inner.poll() {
             Ok(Async::Ready(response)) => {
-                let mut s = self.state.0.borrow_mut();
-                s.in_flight -= 1;
-                s.notify_next();
-                Ok(Async::Ready(response))
+                if let Ok(mut s) = self.state.0.try_lock() {
+                    s.in_flight -= 1;
+                    s.notify_next();
+                    Ok(Async::Ready(response))
+                } else {
+                    Ok(Async::NotReady)
+                }
             }
             other @ _ => other,
         }
@@ -88,7 +104,7 @@ impl<C: Connect + 'static> CappedClient<C> {
         }
     }
 
-    pub fn request(&mut self, req: Request<Body>) -> CappedFuture {
+    pub fn request(&self, req: Request<Body>) -> CappedFuture {
         let inner = self.client.request(req);
 
         CappedFuture {
