@@ -5,21 +5,21 @@ use futures::{
     prelude::*,
     task::{self, Task},
 };
-use hyper::{
-    body::Body,
-    client::{connect::Connect, ResponseFuture},
-    Request, Response,
-};
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},
 };
 
-pub struct Client<C> {
-    client: hyper::Client<C>,
+pub struct CappedClient<C> {
+    client: Client<C>,
     max: u32,
     state: State,
 }
+pub use hyper::{
+    body::Body,
+    client::{connect::Connect, ResponseFuture},
+    Client, Request, Response,
+};
 
 #[derive(Clone)]
 struct State(Arc<Mutex<ClientState>>);
@@ -95,9 +95,9 @@ impl Future for CappedFuture {
     }
 }
 
-impl<C: Connect + 'static> Client<C> {
+impl<C: Connect + 'static> CappedClient<C> {
     pub fn new(client: hyper::Client<C>, max: u32) -> Self {
-        Client {
+        CappedClient {
             client,
             max,
             state: State::default(),

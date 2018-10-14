@@ -6,14 +6,14 @@ extern crate tokio_core;
 // use capped_hyper::Client;
 use capped_hyper as ch;
 use futures::{future, Future, Stream};
-use hyper::{Body, Client, Error};
+use hyper::{Body, Client, Error, Request};
 use std::io::{self, Write};
 use tokio_core::reactor::Core;
 
 pub fn main() -> Result<(), Error> {
     let mut core = Core::new().unwrap();
     let client = Client::new();
-    let capped = ch::Client::new(client, 2);
+    let capped = ch::CappedClient::new(client, 2);
 
     let uris = vec![
         "http://worldclockapi.com/api/json/utc/now",
@@ -22,7 +22,7 @@ pub fn main() -> Result<(), Error> {
     ];
     let work = uris.into_iter().map(|uri| {
         let uri: hyper::Uri = uri.parse().unwrap();
-        let req = hyper::Request::get(uri).body(Body::empty()).expect("req");
+        let req = Request::get(uri).body(Body::empty()).expect("req");
         capped.request(req).and_then(move |res| {
             println!("Response: {}", &res.status());
 
